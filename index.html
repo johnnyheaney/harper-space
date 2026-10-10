@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-512.png">
 <link rel="manifest" href="manifest.webmanifest">
-<style>html,body{margin:0;height:100%;background:#0b0820;overflow:hidden}#tAsk,#cask{display:none!important}</style>
+<style>html,body{margin:0;height:100%;background:#0b0820;overflow:hidden}</style>
 <script>window.SITE_MODE=true;try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}</script>
 </head><body>
 <title>Harper's Space Adventure</title>
@@ -230,6 +230,12 @@ body.mapping #dash, body.mapping #card, body.mapping #cardmin { display: none; }
 .msg.leo .tools-row button { font-size: 14px; font-weight: 700; padding: 4px 10px; min-height: 36px; border-radius: 999px; background: rgba(255,255,255,.1); }
 .asktools { display: flex; gap: 8px; flex-wrap: wrap; }
 .asktools .chip { min-height: 44px; font-size: 15px; }
+.asktools .chip.on { background: var(--gold, #ffd166); color: #1b1440; border-color: transparent; }
+.qa-topics { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+.qa-topics .chip { flex: none; }
+.qa-next { margin: 4px 0 10px 52px; }
+.qa-lab { width: 100%; font-size: 13px; opacity: .7; font-weight: 700; }
+@media (max-width: 500px) { .qa-sugg .chip:nth-child(n+3) { display: none; } }
 .askrow { display: flex; gap: 10px; }
 .askrow input { flex: 1; min-width: 0; min-height: 56px; border-radius: 18px; border: 2px solid var(--line); background: rgba(255,255,255,.06); color: var(--ink); padding: 0 16px; font-size: 19px; }
 .askrow .bigbtn { min-height: 56px; font-size: 20px; padding: 8px 20px; }
@@ -422,6 +428,7 @@ body:has(#ridebar:not([hidden])) #card, body:has(#ridebar:not([hidden])) #cardmi
 <script src="cabin.js"></script>
 <script src="home.js"></script>
 <script src="planetmaker.js"></script>
+<script src="leoqa.js"></script>
 <script src="voice/index.js"></script>
 <script src="core.js"></script>
 

@@ -1160,19 +1160,66 @@ const ASK_RULES = () => "You are " + crew.leo.name + ", a friendly astronaut who
   "Plain text only: no markdown, no headings, no lists; at most one emoji. If a question is not about space or science, kindly say you're a space teacher and steer back to space. Never ask for personal details. Keep everything suitable for a young child. " +
   "Right now the rocket is at: " + P[state.cur].name + ".";
 function leoFace() { return '<div class="face">' + toSVG(leoShapes()) + "</div>"; }
-function openAsk(prefill) { $("#ask").hidden = false; renderAsk(); if (prefill && sampleState === "ok") sendAsk(prefill); }
+/* offline Leo: a bank of recorded answers (leoqa.js), matched by keywords */
+const QA = window.LEO_QA || [], QA_FB = window.LEO_QA_FALLBACK || [];
+const offlineAsk = () => sampleState !== "ok" && QA.length > 0;
+const QA_STOP = new Set("a an the is are was were be do does did of to in on at for and or but it its it's i you me my your we us our what whats what's why how when where who which can could would will should there their they them this that these those with from about if so than then just really very much many lot lots have has had get got make made tell know any some".split(" "));
+const QA_SYN = { sunshine: "sun", suns: "sun", solar: "sun", moons: "moon", lunar: "moon", planets: "planet", stars: "star", starz: "star", galaxys: "galaxy", galaxies: "galaxy", astronauts: "astronaut", spaceman: "astronaut", spacemen: "astronaut", cosmonaut: "astronaut", rockets: "rocket", spaceship: "rocket", spacecraft: "rocket", aliens: "alien", et: "alien", blackhole: "black", hole: "hole", holes: "hole", comets: "comet", asteroids: "asteroid", meteors: "meteor", meteorites: "meteor", plutos: "pluto", mars: "mars", martian: "mars", earths: "earth", world: "earth", hot: "hot", hotter: "hot", hottest: "hot", cold: "cold", colder: "cold", coldest: "cold", big: "big", bigger: "big", biggest: "big", large: "big", largest: "big", huge: "big", small: "small", smaller: "small", smallest: "small", tiny: "small", far: "far", farther: "far", furthest: "far", farthest: "far", further: "far", away: "far", distance: "far", old: "old", older: "old", oldest: "old", age: "old", fast: "fast", faster: "fast", fastest: "fast", speed: "fast", quick: "fast", float: "float", floating: "float", floats: "float", weightless: "float", sleep: "sleep", sleeping: "sleep", eat: "eat", eating: "eat", food: "eat", breathe: "breathe", breathing: "breathe", breath: "breathe", oxygen: "breathe", air: "breathe", wee: "toilet", poo: "toilet", loo: "toilet", toilet: "toilet", bathroom: "toilet", die: "die", dies: "die", dying: "die", dead: "die", explode: "die", explodes: "die", blow: "die", burn: "die", end: "end", ending: "end", born: "start", begin: "start", began: "start", beginning: "start", start: "start", started: "start", made: "made", formed: "made", form: "made", come: "start" };
+function qaStem(w) { w = w.toLowerCase().replace(/[^a-z0-9]/g, ""); if (QA_SYN[w]) return QA_SYN[w]; if (w.length > 4 && /ies$/.test(w)) return w.slice(0, -3) + "y"; if (w.length > 3 && /s$/.test(w) && !/ss$|us$|is$/.test(w)) w = w.slice(0, -1); if (w.length > 5 && /ing$/.test(w)) w = w.slice(0, -3); return QA_SYN[w] || w; }
+function qaToks(t) { return String(t).toLowerCase().replace(/[’']/g, "").split(/[^a-z0-9]+/).filter((w) => w && !QA_STOP.has(w)).map(qaStem).filter((w) => w.length > 1 || /\d/.test(w)); }
+let qaIdx = null;
+function qaIndex() {
+  if (qaIdx) return qaIdx; const df = {};
+  const docs = QA.map((e) => { const phr = [e.q].concat(String(e.alt || "").split("|")).filter(Boolean).map((x) => new Set(qaToks(x))); const all = new Set(); phr.forEach((s) => s.forEach((w) => all.add(w))); all.forEach((w) => (df[w] = (df[w] || 0) + 1)); return { e, phr, all }; });
+  const idf = (w) => Math.log(1 + QA.length / (df[w] || 0.5)); return (qaIdx = { docs, idf });
+}
+function qaMatch(q) {
+  const { docs, idf } = qaIndex(), qt = [...new Set(qaToks(q))]; if (!qt.length) return [];
+  const qw = qt.reduce((a, w) => a + idf(w), 0);
+  return docs.map((d) => { let best = 0; d.phr.forEach((s) => { if (!s.size) return; let hit = 0, pw = 0; s.forEach((w) => (pw += idf(w))); qt.forEach((w) => { if (s.has(w)) hit += idf(w); }); const sc = (2 * hit) / (qw + pw); if (sc > best) best = sc; });
+    let loose = 0; qt.forEach((w) => { if (d.all.has(w)) loose += idf(w); }); return { e: d.e, score: Math.max(best, 0.8 * loose / qw) }; })
+    .filter((r) => r.score > 0).sort((a, b) => b.score - a.score);
+}
+let askTopic = "";
+function openAsk(prefill) { $("#ask").hidden = false; renderAsk(); if (prefill && (sampleState === "ok" || offlineAsk())) sendAsk(prefill); }
+function askOffline(q, entry) {
+  addMsg("me", q); askTurns.push({ role: "user", content: q });
+  const hits = entry ? [{ e: entry, score: 1 }] : qaMatch(q);
+  if (hits.length && hits[0].score >= 0.42) {
+    const e = hits[0].e, t = e.a[1]; if (!entry && hits[0].score < 0.9) qaChips([], "I think you mean: " + e.q); addMsg("leo", t); askTurns.push({ role: "assistant", content: t, id: e.id });
+    speak(t, "leo"); qaRelated(e);
+  } else {
+    const fb = QA_FB.length ? pick(QA_FB) : [0, "Try one of these!"]; addMsg("leo", fb[1]); askTurns.push({ role: "assistant", content: fb[1] }); speak(fb[1], "leo");
+    const opts = (hits.length ? hits.slice(0, 3).map((h) => h.e) : []).concat(shuffle(QA)).filter((e, i, a) => a.indexOf(e) === i).slice(0, 3);
+    qaChips(opts);
+  }
+}
+function qaRelated(e) { const more = shuffle(QA.filter((x) => x.topic === e.topic && x !== e && !askTurns.some((t) => t.id === x.id))).slice(0, 2); if (more.length) qaChips(more, "Ask me next:"); }
+function qaChips(list, label) {
+  const chat = $("#chat"); if (!chat || (!list.length && !label)) return; const d = document.createElement("div"); d.className = "asktools qa-next";
+  d.innerHTML = (label ? '<span class="qa-lab">' + esc(label) + "</span>" : "") + list.map((e) => '<button class="chip plain" data-qa="' + esc(e.id) + '">' + esc(e.q) + "</button>").join("");
+  d.querySelectorAll("[data-qa]").forEach((b) => (b.onclick = () => { const e = QA.find((x) => x.id === b.dataset.qa); d.remove(); if (e) askOffline(e.q, e); }));
+  chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+}
+function qaTopics() { const t = []; QA.forEach((e) => { if (e.topic && !t.includes(e.topic)) t.push(e.topic); }); return t; }
 function renderAsk() {
   const el = $("#ask"), sugg = shuffle(GD.askSuggestions || ["How did the Sun start?", "What is a black hole?", "Why is Pluto not a planet any more?", "How do rockets work?"]).slice(0, 4);
   el.innerHTML = '<div class="sheet" role="dialog" aria-label="Ask Leo"><div class="sheet-head">' + leoFace() + '<h2>Ask ' + esc(crew.leo.name) + '</h2><button class="round" id="aclose" aria-label="Close">✕</button></div>' +
     '<div class="chat" id="chat"></div>' +
-    (sampleState === "ok" ? '<div class="asktools">' + sugg.map((s) => '<button class="chip plain" data-q="' + esc(s) + '">' + esc(s) + "</button>").join("") + "</div>" +
+    (offlineAsk() ? '<div class="asktools qa-topics"><button class="chip plain' + (askTopic ? "" : " on") + '" data-topic="">🎲 Surprise me</button>' + qaTopics().map((t) => '<button class="chip plain' + (askTopic === t ? " on" : "") + '" data-topic="' + esc(t) + '">' + esc(t) + "</button>").join("") + '</div><div class="asktools qa-sugg">' + shuffle(QA.filter((e) => !askTopic || e.topic === askTopic)).slice(0, 4).map((e) => '<button class="chip plain" data-qa="' + esc(e.id) + '">' + esc(e.q) + "</button>").join("") + "</div>" +
+      '<form class="askrow" id="aform"><input id="ainput" maxlength="300" placeholder="Type a space question…" autocomplete="off" enterkeyhint="send"><button class="bigbtn" id="asend">Ask</button></form>'
+    : sampleState === "ok" ? '<div class="asktools">' + sugg.map((s) => '<button class="chip plain" data-q="' + esc(s) + '">' + esc(s) + "</button>").join("") + "</div>" +
       '<form class="askrow" id="aform"><input id="ainput" maxlength="300" placeholder="Ask a space question…" autocomplete="off" enterkeyhint="send"><button class="bigbtn" id="asend">Ask</button></form>'
       : '<p class="hint">' + (sampleState === "loading" ? "Leo is getting on the radio…" : "Leo can only answer questions when the game is opened inside Claude, and someone allows it to ask Claude.") + "</p>") + "</div>";
   const chat = $("#chat");
   if (!askTurns.length) addMsg("leo", "Hello Captain " + crew[captainId()].name + "! I'm " + crew.leo.name + ". Ask me anything about space and I'll do my best to explain.");
   else askTurns.forEach((t) => addMsg(t.role === "user" ? "me" : "leo", t.content));
   $("#aclose").onclick = () => closeOverlay("#ask"); el.onclick = (e) => { if (e.target === el) closeOverlay("#ask"); };
-  if ($("#aform")) {
+  if ($("#aform") && offlineAsk()) {
+    $("#aform").onsubmit = (e) => { e.preventDefault(); const v = $("#ainput").value.trim(); if (v) { $("#ainput").value = ""; $("#ainput").blur(); askOffline(v); } };
+    el.querySelectorAll("[data-topic]").forEach((b) => (b.onclick = () => { askTopic = b.dataset.topic; const keep = $("#chat").innerHTML; renderAsk(); $("#chat").innerHTML = keep; $("#chat").scrollTop = 1e6; }));
+    el.querySelectorAll(".qa-sugg [data-qa]").forEach((b) => (b.onclick = () => { const e = QA.find((x) => x.id === b.dataset.qa); if (e) { askOffline(e.q, e); renderSugg(); } }));
+  } else if ($("#aform")) {
     $("#aform").onsubmit = (e) => { e.preventDefault(); const v = $("#ainput").value.trim(); if (v) { $("#ainput").value = ""; sendAsk(v); } };
     el.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => sendAsk(b.dataset.q)));
   }
@@ -1184,7 +1231,10 @@ function addMsg(kind, text) {
   else d.textContent = text;
   chat.appendChild(d); chat.scrollTop = chat.scrollHeight; return d;
 }
+function renderSugg() { const box = $(".qa-sugg"); if (!box) return; box.innerHTML = shuffle(QA.filter((e) => (!askTopic || e.topic === askTopic) && !askTurns.some((t) => t.id === e.id))).slice(0, 4).map((e) => '<button class="chip plain" data-qa="' + esc(e.id) + '">' + esc(e.q) + "</button>").join("");
+  box.querySelectorAll("[data-qa]").forEach((b) => (b.onclick = () => { const e = QA.find((x) => x.id === b.dataset.qa); if (e) { askOffline(e.q, e); renderSugg(); } })); }
 async function sendAsk(q) {
+  if (offlineAsk()) return askOffline(q);
   if (!sampleFn || askCtl) return;
   addMsg("me", q); askTurns.push({ role: "user", content: q });
   const bubble = addMsg("leo", "Leo is thinking…"), txt = bubble.querySelector(".txt");
